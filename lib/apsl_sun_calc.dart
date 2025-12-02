@@ -155,7 +155,7 @@ class SunCalc {
   }
 
   // Calculate moonrise and moonset times for a given date, latitude, and longitude.
-  static Map getMoonTimes(DateTime date, num lat, num lng,
+  static Map<String, dynamic> getMoonTimes(DateTime date, num lat, num lng,
       [bool inUtc = true]) {
     var t = DateTime(date.year, date.month, date.day, 0, 0, 0);
     if (inUtc) {
@@ -221,7 +221,7 @@ class SunCalc {
       h0 = h2;
     }
 
-    var result = {};
+    Map<String, dynamic> result = {};
     result["alwaysUp"] = false;
     result["alwaysDown"] = false;
 
