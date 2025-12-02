@@ -13,8 +13,11 @@ num declination(num l, num b) {
 }
 
 num azimuth(num h, num phi, num dec) {
-  return math.atan2(
+  var a = math.atan2(
       math.sin(h), math.cos(h) * math.sin(phi) - math.tan(dec) * math.cos(phi));
+  var az = a + math.pi;
+  var tau = math.pi * 2;
+  return (az % tau);
 }
 
 num altitude(num H, num phi, num dec) {
