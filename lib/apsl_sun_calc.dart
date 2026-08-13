@@ -58,7 +58,7 @@ class SunCalc {
     var lw = rad * -lng;
     var phi = rad * lat;
     var dh = observerAngle(height);
-    var d = (toDays(date) - j0 - lw / (2 * pi)).round().toDouble();
+    var d = (toDays(date).round() - j0 - lw / (2 * pi)).round().toDouble();
     var dt = solarTransit(d + j0 + lw / (2 * pi), lw);
     var dec = sunCoords(toDaysTT(dt))["dec"]!;
 
