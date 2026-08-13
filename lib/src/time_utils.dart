@@ -1,31 +1,40 @@
 import 'dart:math' as math;
 
 import './constants.dart';
+import './date_utils.dart';
+import './position_utils.dart';
+import './sun_utils.dart';
 
-num julianCycle(d, lw) {
-  return (d - j0 - lw / (2 * pi)).round();
+// Observer elevation correction to the rise/set altitude (degrees), Meeus ch.15.
+num observerAngle(num height) {
+  return -2.076 * math.sqrt(height) / 60;
 }
 
-num approxTransit(ht, lw, n) {
-  return j0 + (ht + lw) / (2 * pi) + n;
+// Refines a transit time so the Sun's local hour angle is zero (Meeus 15.2; dH/dd ~= 2*PI/day,
+// the sidereal excess and the Sun's own motion cancelling to one solar day).
+num solarTransit(num dt, num lw) {
+  for (var i = 0; i < 3; i++) {
+    final H = wrapPi(siderealTime(dt, lw) - sunCoords(toDaysTT(dt))["ra"]!);
+    dt -= H / (2 * pi);
+  }
+  return dt;
 }
 
-num solarTransitJ(ds, M, L) {
-  return j2000 + ds + 0.0053 * math.sin(M) - 0.0069 * math.sin(2 * L);
-}
+// Time the Sun reaches altitude h0 on the given side of transit (sign -1 = rise, +1 = set);
+// starts from the hour angle at transit and converges with Meeus' altitude correction (15.2).
+num getSetJ(num h0, num dt, num sign, num lw, num phi, num decT) {
+  final cosH0 = (math.sin(h0) - math.sin(phi) * math.sin(decT)) /
+      (math.cos(phi) * math.cos(decT));
+  if (cosH0 < -1 || cosH0 > 1) return double.nan; // sun stays above / below this altitude all day
 
-num hourAngle(h, phi, d) {
-  num angle = (math.sin(h) - math.sin(phi) * math.sin(d)) /
-      (math.cos(phi) * math.cos(d));
-  if (angle < -1) angle = -1;
-  if (angle > 1) angle = 1;
-
-  return math.acos(angle);
-}
-
-num getSetJ(h, lw, phi, dec, n, M, L) {
-  var w = hourAngle(h, phi, dec);
-  var a = approxTransit(w, lw, n);
-
-  return solarTransitJ(a, M, L);
+  var d = dt + sign * math.acos(cosH0) / (2 * pi);
+  for (var i = 0; i < 2; i++) {
+    final c = sunCoords(toDaysTT(d));
+    final H = wrapPi(siderealTime(d, lw) - c["ra"]!);
+    final h = altitude(H, phi, c["dec"]!);
+    final sinH = math.cos(phi) * math.cos(c["dec"]!) * math.sin(H);
+    if (sinH.abs() < 1e-6) break; // grazing the horizon — correction is ill-conditioned
+    d += (h - h0) / (2 * pi * sinH);
+  }
+  return d;
 }

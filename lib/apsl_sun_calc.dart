@@ -12,7 +12,7 @@ import 'src/time_utils.dart';
 final julianEpoch = DateTime.utc(-4713, 11, 24, 12, 0, 0);
 
 // calculations for sun times
-var times = [
+var times = <List<dynamic>>[
   [-0.833, 'sunrise', 'sunset'],
   [-0.3, 'sunriseEnd', 'sunsetStart'],
   [-6, 'dawn', 'dusk'],
@@ -26,7 +26,7 @@ DateTime hoursLater(DateTime date, num h) {
   return date.add(Duration(milliseconds: ms.toInt()));
 }
 
-// moon calculations, based on http://aa.quae.nl/en/reken/hemelpositie.html formulas
+// moon calculations — temporary placeholder, replaced by moon_utils.dart in next commit
 Map<String, num> moonCoords(num d) {
   var L = rad * (218.316 + 13.176396 * d);
   var M = rad * (134.963 + 13.064993 * d);
@@ -50,12 +50,13 @@ class SunCalc {
     var phi = rad * lat;
     var d = toDays(date);
 
-    var c = sunCoords(d);
+    var c = sunCoords(toDaysTT(d));
     var H = siderealTime(d, lw) - (c["ra"] ?? 0.0);
+    var h = altitude(H, phi, (c["dec"] ?? 0.0));
 
     return {
       "azimuth": azimuth(H, phi, (c["dec"] ?? 0.0)),
-      "altitude": altitude(H, phi, (c["dec"] ?? 0.0))
+      "altitude": (h + astroRefraction(h)) / rad
     };
   }
 
@@ -64,36 +65,34 @@ class SunCalc {
   }
 
   // Calculate sunrise, sunset times and related solar phases for a given date and latitude/longitude.
-  static Future<Map<String, DateTime>> getTimes(
-      DateTime date, num lat, num lng) async {
+  static Future<Map<String, dynamic>> getTimes(
+      DateTime date, num lat, num lng, [num height = 0]) async {
     var lw = rad * -lng;
     var phi = rad * lat;
+    var dh = observerAngle(height);
+    var d = (toDays(date) - j0 - lw / (2 * pi)).round().toDouble();
+    var dt = solarTransit(d + j0 + lw / (2 * pi), lw);
+    var dec = sunCoords(toDaysTT(dt))["dec"]!;
 
-    var d = toDays(date);
-    var n = julianCycle(d, lw);
-    var ds = approxTransit(0, lw, n);
-
-    var M = solarMeanAnomaly(ds);
-    var L = eclipticLongitude(M);
-    var dec = declination(L, 0);
-
-    var jnoon = solarTransitJ(ds, M, L);
-    dynamic time, jset, jrise;
-    int i;
-
-    var result = {
-      "solarNoon": fromJulian(jnoon),
-      "nadir": fromJulian(jnoon - 0.5)
+    var result = <String, dynamic>{
+      "solarNoon": fromJulian(dt + j2000),
+      "nadir": fromJulian(dt + j2000 - 0.5)
     };
 
-    for (i = 0; i < times.length; i += 1) {
-      time = times[i];
+    for (var i = 0; i < times.length; i += 1) {
+      var time = times[i];
+      var h0 = (time[0] + dh) * rad;
+      var jrise = getSetJ(h0, dt, -1, lw, phi, dec);
+      var jset = getSetJ(h0, dt, 1, lw, phi, dec);
+      result[time[1]] = jrise.isNaN ? null : fromJulian(jrise + j2000);
+      result[time[2]] = jset.isNaN ? null : fromJulian(jset + j2000);
+    }
 
-      jset = getSetJ(time[0] * rad, lw, phi, dec, n, M, L);
-      jrise = jnoon - (jset - jnoon);
-
-      result[time[1]] = fromJulian(jrise);
-      result[time[2]] = fromJulian(jset);
+    if (result["sunrise"] == null) {
+      var noonAlt = altitude(0, phi, dec);
+      var riseSetAlt = (times[0][0] + dh) * rad;
+      result["alwaysUp"] = noonAlt > riseSetAlt;
+      result["alwaysDown"] = noonAlt <= riseSetAlt;
     }
 
     return result;
@@ -105,29 +104,31 @@ class SunCalc {
     var phi = rad * lat;
     var d = toDays(date);
 
-    var c = moonCoords(d);
+    var c = moonCoords(toDaysTT(d));
     var H = siderealTime(d, lw) - (c["ra"] ?? 0.0);
-    var h = altitude(H, phi, (c["dec"] ?? 0.0));
-    // formula 14.1 of "Astronomical Algorithms" 2nd edition by Jean Meeus (Willmann-Bell, Richmond) 1998.
+    var hGeo = altitude(H, phi, (c["dec"] ?? 0.0));
+    // geocentric parallax (Meeus ch.40) lowers the moon along its vertical circle
+    var h = hGeo - math.asin(earthRadius / (c["dist"] ?? 0.0) * math.cos(hGeo));
+    // parallactic angle, Meeus 14.1
     var pa = math.atan2(
       math.sin(H),
       math.tan(phi) * math.cos(c["dec"] ?? 0.0) -
           math.sin(c["dec"] ?? 0.0) * math.cos(H),
     );
 
-    h = h + astroRefraction(h); // altitude correction for refraction
+    h = h + astroRefraction(h);
 
     return {
       "azimuth": azimuth(H, phi, (c["dec"] ?? 0.0)),
-      "altitude": h,
+      "altitude": h / rad,
       "distance": c["dist"] ?? 0.0,
-      "parallacticAngle": pa
+      "parallacticAngle": pa / rad
     };
   }
 
   // Calculate the illumination of the moon at a given date.
-  static Map<String, num> getMoonIllumination(DateTime date) {
-    var d = toDays(date);
+  static Map<String, dynamic> getMoonIllumination(DateTime date) {
+    var d = toDaysTT(toDays(date));
     var s = sunCoords(d);
     var m = moonCoords(d);
 
@@ -147,55 +148,68 @@ class SunCalc {
                 math.sin(m["dec"] ?? 0.0) *
                 math.cos((s["ra"] ?? 0.0) - (m["ra"] ?? 0.0)));
 
+    var waxing = angle < 0;
+
     return {
       "fraction": (1 + math.cos(inc)) / 2,
-      "phase": 0.5 + 0.5 * inc * (angle < 0 ? -1 : 1) / pi,
-      "angle": angle
+      "phase": 0.5 + 0.5 * inc * (waxing ? -1 : 1) / pi,
+      "angle": angle / rad,
+      "waxing": waxing,
     };
+  }
+
+  // Height of the moon's upper limb above the rise/set horizon (degrees): topocentric centre
+  // altitude plus the moon's semidiameter (0.2725 * equatorial horizontal parallax, tracks distance)
+  // plus the residual horizon refraction (~0.09°, tuned vs USNO).
+  static num _moonHeight(DateTime date, num lat, num lng) {
+    var p = SunCalc.getMoonPosition(date, lat, lng);
+    return (p["altitude"] ?? 0.0) +
+        0.2725 * math.asin(earthRadius / (p["distance"] ?? 0.0)) / rad +
+        0.09;
+  }
+
+  // Polish a crossing time (ms): the quadratic sampler's parabola root sits up to ~0.2° off the true
+  // altitude curve, so Newton-refine against the real _moonHeight. Two central-difference steps.
+  static int _refineMoonCross(int tMs, num lat, num lng) {
+    for (var i = 0; i < 2; i++) {
+      var h = _moonHeight(
+          DateTime.fromMillisecondsSinceEpoch(tMs, isUtc: true), lat, lng);
+      var h1 = _moonHeight(
+          DateTime.fromMillisecondsSinceEpoch(tMs + 30000, isUtc: true), lat, lng);
+      var h2 = _moonHeight(
+          DateTime.fromMillisecondsSinceEpoch(tMs - 30000, isUtc: true), lat, lng);
+      var dh = (h1 - h2) / 60000;
+      if (dh.abs() < 1e-9) break;
+      tMs = (tMs - h / dh).round();
+    }
+    return tMs;
   }
 
   // Calculate moonrise and moonset times for a given date, latitude, and longitude.
   static Map<String, dynamic> getMoonTimes(DateTime date, num lat, num lng,
       [bool inUtc = true]) {
-    var t = DateTime(date.year, date.month, date.day, 0, 0, 0);
-    if (inUtc) {
-      t = DateTime.utc(date.year, date.month, date.day, 0, 0, 0);
-    }
-    const hc = 0.133 * rad;
-    var h0 = (SunCalc.getMoonPosition(t, lat, lng)["altitude"] ?? 0.0) - hc;
-    var h1 = 0.0;
-    var h2 = 0.0;
-    var rise = 0.0;
-    var set = 0.0;
-    var a = 0.0;
-    var b = 0.0;
-    var xe = 0.0;
-    var ye = 0.0;
-    var d = 0.0;
-    var roots = 0.0;
-    var x1 = 0.0;
-    var x2 = 0.0;
-    var dx = 0.0;
+    var t = inUtc
+        ? DateTime.utc(date.year, date.month, date.day)
+        : DateTime(date.year, date.month, date.day);
 
-    // go in 2-hour chunks, each time seeing if a 3-point quadratic curve crosses zero (which means rise or set)
+    var h0 = _moonHeight(t, lat, lng);
+    double? rise, set;
+    var hMax = h0;
+
     for (var i = 1; i <= 24; i += 2) {
-      h1 = (SunCalc.getMoonPosition(hoursLater(t, i), lat, lng)["altitude"] ??
-              0) -
-          hc;
-      h2 = (SunCalc.getMoonPosition(
-                  hoursLater(t, i + 1), lat, lng)["altitude"] ??
-              0) -
-          hc;
+      var h1 = _moonHeight(hoursLater(t, i), lat, lng);
+      var h2 = _moonHeight(hoursLater(t, i + 1), lat, lng);
+      hMax = math.max(hMax, math.max(h1, h2));
+      var a = (h0 + h2) / 2 - h1;
+      var b = (h2 - h0) / 2;
+      var xe = -b / (2 * a);
+      var disc = b * b - 4 * a * h1;
+      var roots = 0;
+      var x1 = 0.0, x2 = 0.0;
+      var ye = (a * xe + b) * xe + h1;
 
-      a = (h0 + h2) / 2 - h1;
-      b = (h2 - h0) / 2;
-      xe = -b / (2 * a);
-      ye = (a * xe + b) * xe + h1;
-      d = b * b - 4 * a * h1;
-      roots = 0;
-
-      if (d >= 0) {
-        dx = math.sqrt(d) / (a.abs() * 2);
+      if (disc >= 0) {
+        var dx = math.sqrt(disc) / (a.abs() * 2);
         x1 = xe - dx;
         x2 = xe + dx;
         if (x1.abs() <= 1) roots++;
@@ -214,26 +228,30 @@ class SunCalc {
         set = i + (ye < 0 ? x1 : x2);
       }
 
-      if ((rise != 0) && (set != 0)) {
-        break;
-      }
+      if (rise != null && set != null) break;
 
       h0 = h2;
     }
 
     Map<String, dynamic> result = {};
-    result["alwaysUp"] = false;
-    result["alwaysDown"] = false;
 
-    if (rise != 0) {
-      result["rise"] = hoursLater(t, rise);
+    if (rise != null) {
+      result["rise"] = DateTime.fromMillisecondsSinceEpoch(
+          _refineMoonCross(hoursLater(t, rise).millisecondsSinceEpoch, lat, lng),
+          isUtc: inUtc);
     }
-    if (set != 0) {
-      result["set"] = hoursLater(t, set);
+    if (set != null) {
+      result["set"] = DateTime.fromMillisecondsSinceEpoch(
+          _refineMoonCross(hoursLater(t, set).millisecondsSinceEpoch, lat, lng),
+          isUtc: inUtc);
     }
 
-    if ((rise == 0) && (set == 0)) {
-      result[ye > 0 ? "alwaysUp" : "alwaysDown"] = true;
+    if (rise == null && set == null) {
+      result["alwaysUp"] = hMax > 0;
+      result["alwaysDown"] = hMax <= 0;
+    } else {
+      result["alwaysUp"] = false;
+      result["alwaysDown"] = false;
     }
 
     return result;
