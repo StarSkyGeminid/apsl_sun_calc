@@ -12,21 +12,29 @@ num declination(num l, num b) {
       math.sin(b) * math.cos(e) + math.cos(b) * math.sin(e) * math.sin(l));
 }
 
+// North-based clockwise azimuth in degrees (0 = N, 90 = E, 180 = S, 270 = W).
 num azimuth(num h, num phi, num dec) {
-  var a = math.atan2(
-      math.sin(h), math.cos(h) * math.sin(phi) - math.tan(dec) * math.cos(phi));
-  var az = a + math.pi;
-  var tau = math.pi * 2;
-  return (az % tau);
+  return (math.atan2(math.sin(h),
+          math.cos(h) * math.sin(phi) - math.tan(dec) * math.cos(phi)) /
+          rad +
+      540) %
+      360;
 }
 
+// Geocentric altitude in radians (convert to degrees at the output boundary).
 num altitude(num H, num phi, num dec) {
   return math.asin(math.sin(phi) * math.sin(dec) +
       math.cos(phi) * math.cos(dec) * math.cos(H));
 }
 
+// Greenwich mean sidereal time, formula 12.4 of Meeus (linear term; sub-arcsec T²/T³ dropped).
 num siderealTime(num d, num lw) {
-  return rad * (280.16 + 360.9856235 * d) - lw;
+  return rad * (280.46061837 + 360.98564736629 * d) - lw;
+}
+
+// Wrap an angle to (−π, π].
+num wrapPi(num a) {
+  return a - 2 * pi * (a / (2 * pi)).round();
 }
 
 num astroRefraction(num h) {
