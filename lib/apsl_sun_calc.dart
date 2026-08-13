@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'src/constants.dart';
 import 'src/date_utils.dart';
+import 'src/moon_utils.dart';
 import 'src/position_utils.dart';
 import 'src/sun_utils.dart';
 import 'src/time_utils.dart';
@@ -24,19 +25,6 @@ var times = <List<dynamic>>[
 DateTime hoursLater(DateTime date, num h) {
   var ms = h * 60 * 60 * 1000;
   return date.add(Duration(milliseconds: ms.toInt()));
-}
-
-// moon calculations — temporary placeholder, replaced by moon_utils.dart in next commit
-Map<String, num> moonCoords(num d) {
-  var L = rad * (218.316 + 13.176396 * d);
-  var M = rad * (134.963 + 13.064993 * d);
-  var F = rad * (93.272 + 13.229350 * d);
-
-  var l = L + rad * 6.289 * math.sin(M);
-  var b = rad * 5.128 * math.sin(F);
-  var dt = 385001 - 20905 * math.cos(M);
-
-  return {"ra": rightAscension(l, b), "dec": declination(l, b), "dist": dt};
 }
 
 class SunCalc {
