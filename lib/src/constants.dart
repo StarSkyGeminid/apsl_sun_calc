@@ -8,3 +8,6 @@ const dayMs = 1000 * 60 * 60 * 24;
 const j1970 = 2440588;
 const j2000 = 2451545;
 const j0 = 0.0009;
+
+// Equatorial radius of the Earth in km, for the Moon's topocentric parallax (Meeus ch.40).
+const earthRadius = 6378.14;
