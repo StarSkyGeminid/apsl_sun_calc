@@ -58,7 +58,10 @@ class SunCalc {
     var lw = rad * -lng;
     var phi = rad * lat;
     var dh = observerAngle(height);
-    var d = (toDays(date).round() - j0 - lw / (2 * pi)).round().toDouble();
+    var noon = date.isUtc
+        ? DateTime.utc(date.year, date.month, date.day, 12)
+        : DateTime(date.year, date.month, date.day, 12);
+    var d = (toDays(noon).round() - j0 - lw / (2 * pi)).round().toDouble();
     var dt = solarTransit(d + j0 + lw / (2 * pi), lw);
     var dec = sunCoords(toDaysTT(dt))["dec"]!;
 
@@ -174,9 +177,8 @@ class SunCalc {
   }
 
   // Calculate moonrise and moonset times for a given date, latitude, and longitude.
-  static Map<String, dynamic> getMoonTimes(DateTime date, num lat, num lng,
-      [bool inUtc = true]) {
-    var t = inUtc
+  static Map<String, dynamic> getMoonTimes(DateTime date, num lat, num lng) {
+    var t = date.isUtc
         ? DateTime.utc(date.year, date.month, date.day)
         : DateTime(date.year, date.month, date.day);
 
@@ -226,12 +228,12 @@ class SunCalc {
     if (rise != null) {
       result["rise"] = DateTime.fromMillisecondsSinceEpoch(
           _refineMoonCross(hoursLater(t, rise).millisecondsSinceEpoch, lat, lng),
-          isUtc: inUtc);
+          isUtc: true);
     }
     if (set != null) {
       result["set"] = DateTime.fromMillisecondsSinceEpoch(
           _refineMoonCross(hoursLater(t, set).millisecondsSinceEpoch, lat, lng),
-          isUtc: inUtc);
+          isUtc: true);
     }
 
     if (rise == null && set == null) {

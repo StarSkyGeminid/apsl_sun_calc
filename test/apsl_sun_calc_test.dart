@@ -169,5 +169,49 @@ void main() {
         );
       });
     });
+
+    group('timezone handling', () {
+      test('getTimes returns UTC DateTimes', () async {
+        final times =
+            await SunCalc.getTimes(DateTime(2025, 7, 1, 12), 43.0, -79.0);
+        expect((times['sunrise'] as DateTime).isUtc, isTrue);
+        expect((times['sunset'] as DateTime).isUtc, isTrue);
+        expect((times['solarNoon'] as DateTime).isUtc, isTrue);
+      });
+
+      test('getMoonTimes returns UTC DateTimes', () {
+        final mt = SunCalc.getMoonTimes(DateTime.utc(2025, 7, 1), 43.0, -79.0);
+        if (mt['rise'] != null) {
+          expect((mt['rise'] as DateTime).isUtc, isTrue);
+        }
+        if (mt['set'] != null) {
+          expect((mt['set'] as DateTime).isUtc, isTrue);
+        }
+      });
+
+      test('getTimes noon anchoring: midnight and noon give same day', () async {
+        final t1 = await SunCalc.getTimes(DateTime(2025, 7, 1, 0), 43.0, -79.0);
+        final t2 = await SunCalc.getTimes(DateTime(2025, 7, 1, 12), 43.0, -79.0);
+        expect(t1['sunrise'], equals(t2['sunrise']));
+        expect(t1['sunset'], equals(t2['sunset']));
+      });
+
+      test('getTimes Jakarta sunrise matches USNO within ±2 min', () async {
+        final times = await SunCalc.getTimes(
+            DateTime(2026, 8, 13, 12), -6.2088, 106.8456);
+        final sunrise = times['sunrise'] as DateTime;
+        final expected = DateTime.utc(2026, 8, 12, 23, 1);
+        expect(sunrise.difference(expected).inMinutes.abs() <= 2, isTrue);
+      });
+
+      test('getMoonTimes Jakarta rise matches USNO within ±3 min', () {
+        final mt = SunCalc.getMoonTimes(
+            DateTime.utc(2026, 8, 12), -6.2088, 106.8456);
+        final rise = mt['rise'] as DateTime?;
+        expect(rise, isNotNull);
+        final expected = DateTime.utc(2026, 8, 12, 23, 18);
+        expect(rise!.difference(expected).inMinutes.abs() <= 3, isTrue);
+      });
+    });
   });
 }

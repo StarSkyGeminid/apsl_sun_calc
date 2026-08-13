@@ -6,7 +6,7 @@ num toJulian(DateTime date) {
 
 DateTime fromJulian(num j) {
   return DateTime.fromMillisecondsSinceEpoch(
-      ((j + 0.5 - j1970) * dayMs).round());
+      ((j + 0.5 - j1970) * dayMs).round(), isUtc: true);
 }
 
 num toDays(DateTime date) {
